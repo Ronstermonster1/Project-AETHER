@@ -1,0 +1,18 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/Documentation/">
+    <File Path="Architecture.md" />
+    <File Path="Research-Questions.md" />
+  </Folder>
+  <Folder Name="/Research/" />
+  <Folder Name="/Research/Experiments/" />
+  <Folder Name="/Research/Literature/" />
+  <Folder Name="/Research/Proposals/" />
+  <Folder Name="/Results/" />
+  <Project Path="Aether.Core/Aether.Core.vcxproj" Id="9e4c580b-1321-447f-805b-6df726d5797a" />
+  <Project Path="Aether.Tests/Aether.Tests.vcxproj" Id="7b6fa9f5-249d-4e35-a038-243478d5b597" />
+  <Project Path="Aethor.Simulator/Aethor.Simulator.vcxproj" Id="b600cf08-33f1-4eaf-87aa-43f07f1d2581" />
+</Solution>

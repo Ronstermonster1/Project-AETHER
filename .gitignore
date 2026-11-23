@@ -1,0 +1,23 @@
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Build output
+Debug/
+Release/
+x64/
+x86/
+out/
+
+# Compiled files
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+
+# Research results
+# Keep CSV experiment results tracked unless they are enormous

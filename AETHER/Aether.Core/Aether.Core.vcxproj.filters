@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Include">
+      <UniqueIdentifier>{325dbea4-faf0-4b1d-af00-8e056af7afc9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source">
+      <UniqueIdentifier>{90fae473-fe6f-476c-b7e9-1b52ecab93bc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\Scene">
+      <UniqueIdentifier>{8121522b-fbda-4bbd-9abe-e66a5b8d29a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\Analysis">
+      <UniqueIdentifier>{1ac257c7-763f-41b4-b324-2f753081469b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\Controller">
+      <UniqueIdentifier>{76d0cd32-9771-4bef-8dc8-62467198826a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\Research">
+      <UniqueIdentifier>{3338325c-54b0-4baa-9870-da49fd73545a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Include\Scene">
+      <UniqueIdentifier>{96312cc2-c22f-4e9c-a8b4-3f74800e13e1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Include\Analysis">
+      <UniqueIdentifier>{b088c7ac-8a49-4da5-af87-513bf02d0d64}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Include\Controller">
+      <UniqueIdentifier>{e83529f3-8c19-4539-b7d5-a67dd1a0e8c8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Include\Research">
+      <UniqueIdentifier>{29b872d7-10f2-4b9e-aecc-005a1765f98f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
