@@ -17,5 +17,7 @@ namespace aether
     // Format: MAJOR.MINOR.PATCH
     // 0.2.0: added the seeded ScenarioGenerator.
     // 0.3.0: added the ChangeDetector.
-    inline constexpr std::string_view kSimulatorVersion = "0.3.0";
+    // 0.4.0: added the TemporalStore and temporal confidence.
+    // 0.5.0: added the ImportanceEstimator and CostEstimator.
+    inline constexpr std::string_view kSimulatorVersion = "0.5.0";
 }

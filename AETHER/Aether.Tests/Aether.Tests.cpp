@@ -15,9 +15,12 @@
 #include <vector>
 
 #include "ChangeDetector.h"
+#include "CostEstimator.h"
+#include "ImportanceEstimator.h"
 #include "Random.h"
 #include "ScenarioGenerator.h"
 #include "SceneState.h"
+#include "TemporalStore.h"
 #include "Vec3.h"
 
 namespace
@@ -265,6 +268,112 @@ namespace
         }
         report.check(inOrder, "ChangeDetector: analyse() returns one unchanged result per region, in order");
     }
+
+    void testTemporalStore(TestReport& report)
+    {
+        aether::ScenarioGenerator scenario(aether::ScenarioConfig{});
+        const aether::SceneState frame0 = scenario.scene();
+        aether::TemporalStore store(aether::TemporalStoreConfig{}, frame0);
+
+        bool startsRendered = store.regionCount() == frame0.regions.size()
+            && std::memcmp(store.renderedStates().data(), frame0.regions.data(),
+                           frame0.regions.size() * sizeof(aether::SceneRegion)) == 0;
+        for (std::uint32_t id = 0; startsRendered && id < store.regionCount(); ++id)
+        {
+            startsRendered = store.renderedFrame(id) == 0 && store.renderCount(id) == 1 && store.age(id, 0) == 0;
+        }
+        report.check(startsRendered, "TemporalStore: starts with every region rendered at frame 0");
+
+        for (int i = 0; i < 10; ++i) { scenario.advance(); }
+        const aether::SceneState& frame10 = scenario.scene();
+        store.recordRender(frame10.regions[3], frame10.frameIndex);
+
+        report.check(store.age(3, 10) == 0 && store.age(4, 10) == 10
+                  && store.renderCount(3) == 2 && store.renderCount(4) == 1,
+            "TemporalStore: recordRender resets the age and counts the render");
+        report.check(std::memcmp(&store.renderedState(3), &frame10.regions[3], sizeof(aether::SceneRegion)) == 0,
+            "TemporalStore: recordRender stores the region's state");
+        report.check(store.age(3, 5) == 0, "TemporalStore: age never wraps around below zero");
+
+        const aether::ChangeDetector detector(aether::ChangeDetectorConfig{});
+        const std::vector<aether::RegionChange> changes = detector.analyse(store.renderedStates(), frame10, frame10);
+        report.check(changes[3].changeScore == 0.0f,
+            "TemporalStore: renderedStates() feeds the ChangeDetector (fresh region shows no change)");
+
+        aether::RegionChange noChange{};
+        noChange.regionId = 3;  // rendered at frame 10
+        aether::RegionChange atThreshold = noChange;
+        atThreshold.changeScore = 1.0f;
+
+        report.check(std::abs(store.confidence(noChange, 10) - 1.0f) < 1e-6f,
+            "TemporalStore: a fresh, unchanged result has confidence 1");
+        report.check(std::abs(store.confidence(noChange, 10 + 120) - std::exp(-1.0f)) < 1e-4f,
+            "TemporalStore: confidence falls to about 37 % after 120 frames");
+        report.check(std::abs(store.confidence(atThreshold, 10) - 0.5f) < 1e-6f,
+            "TemporalStore: a change exactly at the threshold halves confidence");
+    }
+
+    void testImportanceEstimator(TestReport& report)
+    {
+        const aether::ImportanceEstimator estimator(aether::ImportanceEstimatorConfig{});  // weight 0.3, half-saturation 4 px
+        aether::SceneRegion region{};
+        region.authoredImportance = 0.5f;
+
+        const aether::RegionChange still{};
+        report.check(estimator.estimateRegion(region, still).importance == 0.5f,
+            "Importance: a still region keeps its authored importance");
+
+        aether::RegionChange moving{};
+        moving.screenSpeedPixels = 4.0f;  // exactly the half-saturation speed
+        report.check(std::abs(estimator.estimateRegion(region, moving).importance - (0.5f + 0.3f * 0.5f)) < 1e-6f,
+            "Importance: motion at the half-saturation speed adds half the motion weight");
+
+        region.authoredImportance = 0.9f;
+        moving.screenSpeedPixels = 1000.0f;
+        report.check(estimator.estimateRegion(region, moving).importance <= 1.0f,
+            "Importance: never exceeds 1");
+
+        const aether::ImportanceEstimator motionIgnored(aether::ImportanceEstimatorConfig{ .motionWeight = 0.0f });
+        report.check(motionIgnored.estimateRegion(region, moving).importance == 0.9f,
+            "Importance: motionWeight 0 ignores motion");
+    }
+
+    void testCostEstimator(TestReport& report)
+    {
+        const aether::CostEstimatorConfig config{};
+        const aether::CostEstimator estimator(config);
+        constexpr float kScreenPixels = 1920.0f * 1080.0f;
+
+        aether::SceneRegion region{};
+        region.screenCoverage = 0.01f;
+        region.geometry.triangleCount = 10'000;
+        region.material.shadingComplexity = 2.0f;
+
+        const aether::RegionCost cost = estimator.estimateRegion(region, kScreenPixels);
+        const float pixels = 0.01f * kScreenPixels;
+        const float expectedRender = config.regionOverheadCost
+                                   + 10'000.0f * config.costPerTriangle
+                                   + pixels * 2.0f * config.costPerShadedPixel;
+        report.check(std::abs(cost.render - expectedRender) < 1e-5f,
+            "Cost: render = overhead + geometry + shading");
+        report.check(cost.reuse < cost.render, "Cost: reusing a region is cheaper than rendering it");
+
+        aether::SceneRegion bigger = region;
+        bigger.screenCoverage = 0.02f;
+        report.check(std::abs(estimator.estimateRegion(bigger, kScreenPixels).shading - 2.0f * cost.shading) < 1e-5f,
+            "Cost: twice the pixels costs twice the shading");
+
+        const aether::ScenarioGenerator scenario(aether::ScenarioConfig{});
+        const std::vector<aether::RegionCost> costs = estimator.estimate(scenario.scene());
+        double expectedFrame = config.frameFixedCost;
+        for (const aether::RegionCost& regionCost : costs)
+        {
+            expectedFrame += regionCost.render;
+        }
+        report.check(costs.size() == scenario.scene().regions.size()
+                  && std::abs(estimator.fullRenderFrameCost(costs) - expectedFrame) < 1e-9,
+            "Cost: full frame = fixed cost + every region's render cost");
+    }
 }
 
 int main()
@@ -277,6 +386,9 @@ int main()
     testChangesMatchBehaviours(report);
     testLampToggles(report);
     testChangeDetector(report);
+    testTemporalStore(report);
+    testImportanceEstimator(report);
+    testCostEstimator(report);
 
     std::cout << std::format("\n{} check(s) failed.\n", report.failures());
     return report.failures() == 0 ? 0 : 1;

@@ -20,17 +20,23 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ChangeDetector.h" />
+    <ClInclude Include="CostEstimator.h" />
+    <ClInclude Include="ImportanceEstimator.h" />
     <ClInclude Include="ProjectInfo.h" />
     <ClInclude Include="Random.h" />
     <ClInclude Include="ScenarioGenerator.h" />
     <ClInclude Include="SceneRegion.h" />
     <ClInclude Include="SceneState.h" />
+    <ClInclude Include="TemporalStore.h" />
     <ClInclude Include="Vec3.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ChangeDetector.cpp" />
+    <ClCompile Include="CostEstimator.cpp" />
+    <ClCompile Include="ImportanceEstimator.cpp" />
     <ClCompile Include="Random.cpp" />
     <ClCompile Include="ScenarioGenerator.cpp" />
+    <ClCompile Include="TemporalStore.cpp" />
     <ClCompile Include="Vec3.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

@@ -34,6 +34,9 @@
     <Filter Include="Source\Core">
       <UniqueIdentifier>{7fd25945-6594-40cf-8316-1f96973cc3c8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source\Temporal">
+      <UniqueIdentifier>{8fe1d489-599f-4d9b-9f92-ab69bb2f2b0c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Vec3.h">
@@ -57,6 +60,15 @@
     <ClInclude Include="ChangeDetector.h">
       <Filter>Source\Analysis</Filter>
     </ClInclude>
+    <ClInclude Include="ImportanceEstimator.h">
+      <Filter>Source\Analysis</Filter>
+    </ClInclude>
+    <ClInclude Include="CostEstimator.h">
+      <Filter>Source\Analysis</Filter>
+    </ClInclude>
+    <ClInclude Include="TemporalStore.h">
+      <Filter>Source\Temporal</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Vec3.cpp">
@@ -70,6 +82,15 @@
     </ClCompile>
     <ClCompile Include="ChangeDetector.cpp">
       <Filter>Source\Analysis</Filter>
+    </ClCompile>
+    <ClCompile Include="ImportanceEstimator.cpp">
+      <Filter>Source\Analysis</Filter>
+    </ClCompile>
+    <ClCompile Include="CostEstimator.cpp">
+      <Filter>Source\Analysis</Filter>
+    </ClCompile>
+    <ClCompile Include="TemporalStore.cpp">
+      <Filter>Source\Temporal</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
