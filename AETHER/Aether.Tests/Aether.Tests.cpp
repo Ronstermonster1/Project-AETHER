@@ -12,7 +12,9 @@
 #include <format>
 #include <iostream>
 #include <string_view>
+#include <vector>
 
+#include "ChangeDetector.h"
 #include "Random.h"
 #include "ScenarioGenerator.h"
 #include "SceneState.h"
@@ -169,6 +171,100 @@ namespace
         const bool offAt240 = !scenario.summary().localLightOn;
         report.check(offAtStart && onAt120 && offAt240, "Scenario: lamp is off at 0, on at 120, off at 240");
     }
+
+    // A region covering 1 % of a 1920x1080 screen with radius 1: about 162 pixels across,
+    // so one world unit is about 81 pixels.
+    aether::SceneRegion makeTestRegion()
+    {
+        aether::SceneRegion region{};
+        region.screenCoverage = 0.01f;
+        region.geometry.boundingRadius = 1.0f;
+        return region;
+    }
+
+    aether::SceneRegion withLightingScaled(aether::SceneRegion region, float factor)
+    {
+        region.lighting.direct = region.lighting.direct * factor;
+        region.lighting.indirect = region.lighting.indirect * factor;
+        return region;
+    }
+
+    void testChangeDetector(TestReport& report)
+    {
+        const aether::ChangeDetector detector(aether::ChangeDetectorConfig{});
+        constexpr float kScreenPixels = 1920.0f * 1080.0f;
+        const aether::SceneRegion base = makeTestRegion();
+
+        const aether::RegionChange unchanged = detector.analyseRegion(base, base, base, kScreenPixels);
+        report.check(unchanged.changeScore == 0.0f && !unchanged.isSignificant(),
+            "ChangeDetector: identical regions score 0");
+
+        aether::SceneRegion nudged = base;
+        nudged.geometry.position.x += 0.001f;  // about 0.08 pixels
+        report.check(!detector.analyseRegion(base, base, nudged, kScreenPixels).isSignificant(),
+            "ChangeDetector: sub-pixel movement is not significant");
+
+        aether::SceneRegion moved = base;
+        moved.geometry.position.x += 0.1f;     // about 8 pixels
+        const aether::RegionChange movedChange = detector.analyseRegion(base, base, moved, kScreenPixels);
+        report.check(movedChange.isSignificant()
+                  && movedChange.displacementPixels > 7.5f && movedChange.displacementPixels < 8.5f,
+            "ChangeDetector: moving 0.1 units is about 8 pixels and significant");
+
+        aether::SceneRegion deformed = base;
+        ++deformed.geometry.meshVersion;
+        const aether::RegionChange deformedChange = detector.analyseRegion(base, base, deformed, kScreenPixels);
+        report.check(deformedChange.meshChanged && deformedChange.isSignificant(),
+            "ChangeDetector: a mesh change is significant");
+
+        report.check(!detector.analyseRegion(base, base, withLightingScaled(base, 1.01f), kScreenPixels).isSignificant(),
+            "ChangeDetector: 1 % brighter is not significant");
+        report.check(detector.analyseRegion(base, base, withLightingScaled(base, 1.05f), kScreenPixels).isSignificant(),
+            "ChangeDetector: 5 % brighter is significant");
+        report.check(detector.analyseRegion(base, base, withLightingScaled(base, 0.95f), kScreenPixels).isSignificant(),
+            "ChangeDetector: 5 % darker is significant too");
+
+        aether::SceneRegion tinted = base;
+        tinted.material.albedo.x += 0.005f;
+        report.check(!detector.analyseRegion(base, base, tinted, kScreenPixels).isSignificant(),
+            "ChangeDetector: a 0.005 albedo change is not significant");
+        tinted.material.albedo.x = base.material.albedo.x + 0.05f;
+        report.check(detector.analyseRegion(base, base, tinted, kScreenPixels).isSignificant(),
+            "ChangeDetector: a 0.05 albedo change is significant");
+
+        // Motion is measured from the previous frame, displacement from the reference.
+        aether::SceneRegion previous = base;
+        previous.geometry.position.x += 0.5f;
+        aether::SceneRegion current = base;
+        current.geometry.position.x += 0.6f;
+        const aether::RegionChange motion = detector.analyseRegion(base, previous, current, kScreenPixels);
+        report.check(std::abs(motion.velocity.x - 0.1f) < 1e-5f && motion.displacementPixels > 40.0f,
+            "ChangeDetector: velocity uses the previous frame, displacement uses the reference");
+
+        // The slow-drift trap: +0.5 % light per frame for 10 frames.
+        aether::SceneRegion drifting = base;
+        aether::SceneRegion lastFrame = base;
+        for (int frame = 0; frame < 10; ++frame)
+        {
+            lastFrame = drifting;
+            drifting = withLightingScaled(drifting, 1.005f);
+        }
+        const bool perFrameMisses = !detector.analyseRegion(lastFrame, lastFrame, drifting, kScreenPixels).isSignificant();
+        const bool referenceCatches = detector.analyseRegion(base, lastFrame, drifting, kScreenPixels).isSignificant();
+        report.check(perFrameMisses && referenceCatches,
+            "ChangeDetector: slow drift is missed frame-to-frame but caught against the reference");
+
+        // Whole-scene analysis returns one result per region, in order.
+        const aether::ScenarioGenerator scenario(aether::ScenarioConfig{});
+        const aether::SceneState& scene = scenario.scene();
+        const std::vector<aether::RegionChange> changes = detector.analyse(scene.regions, scene, scene);
+        bool inOrder = changes.size() == scene.regions.size();
+        for (std::size_t i = 0; inOrder && i < changes.size(); ++i)
+        {
+            inOrder = changes[i].regionId == scene.regions[i].id && !changes[i].isSignificant();
+        }
+        report.check(inOrder, "ChangeDetector: analyse() returns one unchanged result per region, in order");
+    }
 }
 
 int main()
@@ -180,6 +276,7 @@ int main()
     testDeterminism(report);
     testChangesMatchBehaviours(report);
     testLampToggles(report);
+    testChangeDetector(report);
 
     std::cout << std::format("\n{} check(s) failed.\n", report.failures());
     return report.failures() == 0 ? 0 : 1;

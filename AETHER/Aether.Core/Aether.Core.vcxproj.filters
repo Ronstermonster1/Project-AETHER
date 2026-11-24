@@ -54,6 +54,9 @@
     <ClInclude Include="ScenarioGenerator.h">
       <Filter>Source\Scene</Filter>
     </ClInclude>
+    <ClInclude Include="ChangeDetector.h">
+      <Filter>Source\Analysis</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Vec3.cpp">
@@ -64,6 +67,9 @@
     </ClCompile>
     <ClCompile Include="ScenarioGenerator.cpp">
       <Filter>Source\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="ChangeDetector.cpp">
+      <Filter>Source\Analysis</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

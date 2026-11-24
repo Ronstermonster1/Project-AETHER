@@ -16,5 +16,6 @@ namespace aether
     // (for example: the cost model, the change detection thresholds, the scenario generator).
     // Format: MAJOR.MINOR.PATCH
     // 0.2.0: added the seeded ScenarioGenerator.
-    inline constexpr std::string_view kSimulatorVersion = "0.2.0";
+    // 0.3.0: added the ChangeDetector.
+    inline constexpr std::string_view kSimulatorVersion = "0.3.0";
 }
