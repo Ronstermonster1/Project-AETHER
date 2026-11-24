@@ -66,6 +66,15 @@
     <ClInclude Include="CostEstimator.h">
       <Filter>Source\Analysis</Filter>
     </ClInclude>
+    <ClInclude Include="VisualErrorEstimator.h">
+      <Filter>Source\Analysis</Filter>
+    </ClInclude>
+    <ClInclude Include="GroundTruthEvaluator.h">
+      <Filter>Source\Research</Filter>
+    </ClInclude>
+    <ClInclude Include="ScreenSpace.h">
+      <Filter>Source\Core</Filter>
+    </ClInclude>
     <ClInclude Include="TemporalStore.h">
       <Filter>Source\Temporal</Filter>
     </ClInclude>
@@ -88,6 +97,12 @@
     </ClCompile>
     <ClCompile Include="CostEstimator.cpp">
       <Filter>Source\Analysis</Filter>
+    </ClCompile>
+    <ClCompile Include="VisualErrorEstimator.cpp">
+      <Filter>Source\Analysis</Filter>
+    </ClCompile>
+    <ClCompile Include="GroundTruthEvaluator.cpp">
+      <Filter>Source\Research</Filter>
     </ClCompile>
     <ClCompile Include="TemporalStore.cpp">
       <Filter>Source\Temporal</Filter>

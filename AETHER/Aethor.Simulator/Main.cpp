@@ -11,6 +11,7 @@
 
 #include <algorithm>    // std::max, std::min, std::ranges::sort
 #include <array>
+#include <cmath>        // std::sqrt
 #include <cstddef>      // std::size_t
 #include <cstdint>      // std::uint32_t, std::uint64_t
 #include <format>       // std::format (C++20)
@@ -22,11 +23,14 @@
 
 #include "ChangeDetector.h"
 #include "CostEstimator.h"
+#include "GroundTruthEvaluator.h"
 #include "ImportanceEstimator.h"
 #include "ProjectInfo.h"
 #include "ScenarioGenerator.h"
 #include "SceneState.h"
+#include "ScreenSpace.h"
 #include "TemporalStore.h"
+#include "VisualErrorEstimator.h"
 
 // Compile-time checks. If either condition is false, the build stops with our message.
 static_assert(sizeof(void*) == 8,
@@ -377,6 +381,191 @@ namespace
         std::cout << "They show how the model behaves, not how a real renderer would perform.\n";
     }
 
+    // -------------------------------------------------------------------------------------
+    // Experiment "error": what is the TRUE error (judged by the GroundTruthEvaluator, which no
+    // strategy can see) of four update strategies, and how well does the VisualErrorEstimator
+    // predict it?
+    // -------------------------------------------------------------------------------------
+
+    // Compares predicted with actual per-region error.
+    class EstimatorAccuracy
+    {
+    public:
+        void add(double predicted, double actual, double visibleThreshold)
+        {
+            ++m_count;
+            m_sumPredicted += predicted;
+            m_sumActual += actual;
+            m_sumPredictedSquared += predicted * predicted;
+            m_sumActualSquared += actual * actual;
+            m_sumProduct += predicted * actual;
+
+            const bool predictedVisible = predicted >= visibleThreshold;
+            const bool actuallyVisible = actual >= visibleThreshold;
+            if (predictedVisible && actuallyVisible) { ++m_bothVisible; }
+            else if (predictedVisible) { ++m_falseAlarms; }
+            else if (actuallyVisible)
+            {
+                ++m_missed;
+                m_largestMissed = std::max(m_largestMissed, actual);
+            }
+            else { ++m_bothInvisible; }
+        }
+
+        // Pearson correlation: +1 = predictions rise and fall exactly with the truth, 0 = unrelated.
+        [[nodiscard]] double correlation() const
+        {
+            const double n = static_cast<double>(m_count);
+            const double covariance = n * m_sumProduct - m_sumPredicted * m_sumActual;
+            const double spreadPredicted = n * m_sumPredictedSquared - m_sumPredicted * m_sumPredicted;
+            const double spreadActual = n * m_sumActualSquared - m_sumActual * m_sumActual;
+            const double denominator = std::sqrt(spreadPredicted * spreadActual);
+            return denominator > 0.0 ? covariance / denominator : 0.0;
+        }
+
+        void print() const
+        {
+            const double n = static_cast<double>(std::max<std::uint64_t>(m_count, 1));
+            std::cout << std::format("  region-frames compared:       {}\n", m_count);
+            std::cout << std::format("  mean predicted error:         {:.5f}\n", m_sumPredicted / n);
+            std::cout << std::format("  mean actual error:            {:.5f}\n", m_sumActual / n);
+            std::cout << std::format("  correlation (Pearson r):      {:.3f}\n", correlation());
+            std::cout << "  at the visibility threshold:\n";
+            std::cout << std::format("    predicted visible, is visible       {:6}\n", m_bothVisible);
+            std::cout << std::format("    predicted visible, is NOT visible   {:6}   (false alarms: updates that were not needed)\n", m_falseAlarms);
+            std::cout << std::format("    predicted invisible, IS visible     {:6}   (misses; largest actual error {:.4f})\n", m_missed, m_largestMissed);
+            std::cout << std::format("    predicted invisible, is invisible   {:6}\n", m_bothInvisible);
+        }
+
+    private:
+        std::uint64_t m_count = 0;
+        double m_sumPredicted = 0.0;
+        double m_sumActual = 0.0;
+        double m_sumPredictedSquared = 0.0;
+        double m_sumActualSquared = 0.0;
+        double m_sumProduct = 0.0;
+        std::uint64_t m_bothVisible = 0;
+        std::uint64_t m_falseAlarms = 0;
+        std::uint64_t m_missed = 0;
+        std::uint64_t m_bothInvisible = 0;
+        double m_largestMissed = 0.0;
+    };
+
+    void runErrorExperiment()
+    {
+        enum class Policy { RenderEverything, PreviousFrame, LastRendered, NeverUpdate };
+
+        struct Strategy
+        {
+            std::string_view name;
+            Policy policy;
+            aether::TemporalStore store;
+            std::uint64_t updates = 0;
+            double meanErrorSum = 0.0;
+            double worstFrameError = 0.0;
+            double visibleFractionSum = 0.0;
+            double worstVisibleFraction = 0.0;
+            float worstRegionError = 0.0f;
+        };
+
+        aether::ScenarioGenerator scenario(aether::ScenarioConfig{});
+        const aether::ChangeDetector detector(aether::ChangeDetectorConfig{});
+        const aether::ImportanceEstimator importanceEstimator(aether::ImportanceEstimatorConfig{});
+        const aether::VisualErrorEstimator errorEstimator(aether::VisualErrorEstimatorConfig{});
+        const aether::GroundTruthConfig truthConfig{};
+        const aether::GroundTruthEvaluator groundTruth(truthConfig);
+        const aether::TemporalStoreConfig storeConfig{};
+        aether::SceneState previous = scenario.scene();
+
+        std::vector<Strategy> strategies;
+        strategies.push_back({ "re-render everything", Policy::RenderEverything, aether::TemporalStore(storeConfig, previous) });
+        strategies.push_back({ "A: vs previous frame", Policy::PreviousFrame, aether::TemporalStore(storeConfig, previous) });
+        strategies.push_back({ "B: vs last rendered",  Policy::LastRendered, aether::TemporalStore(storeConfig, previous) });
+        strategies.push_back({ "never update",         Policy::NeverUpdate, aether::TemporalStore(storeConfig, previous) });
+
+        EstimatorAccuracy accuracy;
+
+        for (std::uint64_t frame = 1; frame <= kFrameCount; ++frame)
+        {
+            scenario.advance();
+            const aether::SceneState& current = scenario.scene();
+            const float pixelCount = aether::screenPixelCount(current);
+
+            for (Strategy& strategy : strategies)
+            {
+                switch (strategy.policy)
+                {
+                case Policy::RenderEverything:
+                    for (const aether::SceneRegion& region : current.regions)
+                    {
+                        strategy.store.recordRender(region, current.frameIndex);
+                    }
+                    strategy.updates += current.regions.size();
+                    break;
+
+                case Policy::PreviousFrame:
+                    strategy.updates += renderSignificantChanges(
+                        strategy.store, detector.analyse(previous.regions, previous, current), current);
+                    break;
+
+                case Policy::LastRendered:
+                {
+                    const std::vector<aether::RegionChange> changes =
+                        detector.analyse(strategy.store.renderedStates(), previous, current);
+
+                    // Before deciding: for EVERY region, the predicted error if it were reused
+                    // vs the true error if it were reused.
+                    const std::vector<aether::RegionImportance> importance = importanceEstimator.estimate(current, changes);
+                    const std::vector<aether::ErrorEstimate> estimates = errorEstimator.estimate(current, changes, importance);
+                    for (std::size_t i = 0; i < current.regions.size(); ++i)
+                    {
+                        const float actual = groundTruth.regionError(strategy.store.renderedStates()[i], current.regions[i], pixelCount);
+                        accuracy.add(estimates[i].pixelError, actual, truthConfig.visibilityThreshold);
+                    }
+
+                    strategy.updates += renderSignificantChanges(strategy.store, changes, current);
+                    break;
+                }
+
+                case Policy::NeverUpdate:
+                    break;
+                }
+
+                // Judge what is on screen now.
+                const aether::FrameError error = groundTruth.evaluate(strategy.store.renderedStates(), current);
+                strategy.meanErrorSum += error.meanError;
+                strategy.worstFrameError = std::max(strategy.worstFrameError, error.meanError);
+                strategy.visibleFractionSum += error.visibleFraction;
+                strategy.worstVisibleFraction = std::max(strategy.worstVisibleFraction, error.visibleFraction);
+                strategy.worstRegionError = std::max(strategy.worstRegionError, error.maxRegionError);
+            }
+
+            previous = current;
+        }
+
+        const double frames = static_cast<double>(kFrameCount);
+        std::cout << std::format("Ground-truth error of what is on screen over {} frames (a model: see GroundTruthEvaluator.h)\n", kFrameCount);
+        std::cout << std::format("'visibly wrong' = per-pixel error of at least {}\n\n", truthConfig.visibilityThreshold);
+        std::cout << " strategy             | updates/frame | mean error | worst frame | visibly wrong: mean | worst frame | worst region\n";
+        std::cout << "----------------------+---------------+------------+-------------+---------------------+-------------+-------------\n";
+        for (const Strategy& strategy : strategies)
+        {
+            std::cout << std::format(" {:<20} | {:13.1f} | {:10.5f} | {:11.5f} | {:17.1f} % | {:9.1f} % | {:11.3f}\n",
+                strategy.name,
+                static_cast<double>(strategy.updates) / frames,
+                strategy.meanErrorSum / frames,
+                strategy.worstFrameError,
+                100.0 * strategy.visibleFractionSum / frames,
+                100.0 * strategy.worstVisibleFraction,
+                strategy.worstRegionError);
+        }
+
+        std::cout << "\nVisualErrorEstimator vs ground truth (strategy B, every region, every frame, before deciding):\n";
+        accuracy.print();
+        std::cout << "\nBoth sides of this comparison are models with assumed constants. Agreement or disagreement\n";
+        std::cout << "between them says nothing yet about real images; it shows where the two models differ.\n";
+    }
+
     struct Experiment
     {
         std::string_view name;
@@ -388,6 +577,7 @@ namespace
         Experiment{ "reference", "change detection against the previous frame vs the last rendered state", &runReferenceExperiment },
         Experiment{ "temporal",  "age and confidence of displayed results",                                  &runTemporalExperiment },
         Experiment{ "estimators", "modelled frame cost and importance under change-driven updates",           &runEstimatorExperiment },
+        Experiment{ "error",      "true (ground-truth) error of four strategies, and estimator accuracy",     &runErrorExperiment },
     };
 }
 

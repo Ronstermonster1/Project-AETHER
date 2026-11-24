@@ -16,12 +16,15 @@
 
 #include "ChangeDetector.h"
 #include "CostEstimator.h"
+#include "GroundTruthEvaluator.h"
 #include "ImportanceEstimator.h"
 #include "Random.h"
 #include "ScenarioGenerator.h"
 #include "SceneState.h"
+#include "ScreenSpace.h"
 #include "TemporalStore.h"
 #include "Vec3.h"
+#include "VisualErrorEstimator.h"
 
 namespace
 {
@@ -374,6 +377,72 @@ namespace
                   && std::abs(estimator.fullRenderFrameCost(costs) - expectedFrame) < 1e-9,
             "Cost: full frame = fixed cost + every region's render cost");
     }
+
+    void testScreenSpace(TestReport& report)
+    {
+        const aether::SceneRegion region = makeTestRegion();  // 1 % of 1920x1080, radius 1
+        constexpr float kScreenPixels = 1920.0f * 1080.0f;
+        report.check(std::abs(aether::onScreenRadiusPixels(region, kScreenPixels) - 81.24f) < 0.01f
+                  && std::abs(aether::pixelsPerWorldUnit(region, kScreenPixels) - 81.24f) < 0.01f,
+            "ScreenSpace: 1 % of a 1080p screen is a disc of radius ~81 px");
+    }
+
+    void testVisualErrorEstimator(TestReport& report)
+    {
+        const aether::VisualErrorEstimator estimator(aether::VisualErrorEstimatorConfig{});  // 0.02 per score point
+        aether::SceneRegion region{};
+        region.screenCoverage = 0.01f;
+        aether::RegionImportance importance{};
+        importance.importance = 0.5f;
+
+        aether::RegionChange change{};
+        report.check(estimator.estimateRegion(region, change, importance).pixelError == 0.0f,
+            "ErrorEstimate: no change predicts no error");
+
+        change.changeScore = 1.0f;
+        const aether::ErrorEstimate atThreshold = estimator.estimateRegion(region, change, importance);
+        report.check(std::abs(atThreshold.pixelError - 0.02f) < 1e-7f
+                  && std::abs(atThreshold.visibleError - 0.02f * 0.01f * 0.5f) < 1e-9f,
+            "ErrorEstimate: score 1 predicts 0.02, weighted by coverage and importance");
+
+        change.changeScore = 1000.0f;
+        report.check(estimator.estimateRegion(region, change, importance).pixelError == 1.0f,
+            "ErrorEstimate: predicted error never exceeds 1");
+    }
+
+    void testGroundTruthEvaluator(TestReport& report)
+    {
+        const aether::GroundTruthConfig config{};
+        const aether::GroundTruthEvaluator truth(config);
+        constexpr float kScreenPixels = 1920.0f * 1080.0f;
+        const aether::SceneRegion base = makeTestRegion();
+
+        report.check(truth.regionError(base, base, kScreenPixels) == 0.0f,
+            "GroundTruth: showing the correct state has zero error");
+        report.check(truth.regionError(base, withLightingScaled(base, 1.5f), kScreenPixels) > 0.0f,
+            "GroundTruth: a lighting change creates error");
+
+        aether::SceneRegion farAway = base;
+        farAway.geometry.position.x += 10.0f;  // ~800 px, far more than the disc's diameter
+        report.check(std::abs(truth.regionError(base, farAway, kScreenPixels) - 2.0f * config.edgeContrast) < 1e-6f,
+            "GroundTruth: a region moved completely off its old image is wrong twice over (ghost + hole)");
+
+        aether::SceneRegion nudged = base;
+        nudged.geometry.position.x += 0.001f;  // ~0.08 px
+        report.check(truth.regionError(base, nudged, kScreenPixels) < 0.01f,
+            "GroundTruth: a sub-pixel move creates almost no error");
+
+        aether::SceneRegion deformed = base;
+        deformed.geometry.meshVersion += 4;    // 4 versions behind: 20 % of pixels wrong
+        report.check(std::abs(truth.regionError(base, deformed, kScreenPixels) - 0.2f * config.edgeContrast) < 1e-6f,
+            "GroundTruth: each mesh version behind makes 5 % of pixels wrong");
+
+        const aether::ScenarioGenerator scenario(aether::ScenarioConfig{});
+        const aether::SceneState& scene = scenario.scene();
+        const aether::FrameError perfect = truth.evaluate(scene.regions, scene);
+        report.check(perfect.meanError == 0.0 && perfect.visibleFraction == 0.0 && perfect.maxRegionError == 0.0f,
+            "GroundTruth: a frame showing the truth has no error");
+    }
 }
 
 int main()
@@ -389,6 +458,9 @@ int main()
     testTemporalStore(report);
     testImportanceEstimator(report);
     testCostEstimator(report);
+    testScreenSpace(report);
+    testVisualErrorEstimator(report);
+    testGroundTruthEvaluator(report);
 
     std::cout << std::format("\n{} check(s) failed.\n", report.failures());
     return report.failures() == 0 ? 0 : 1;

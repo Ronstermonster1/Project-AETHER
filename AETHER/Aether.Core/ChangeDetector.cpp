@@ -5,7 +5,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <numbers>
+
+#include "ScreenSpace.h"
 
 namespace aether
 {
@@ -15,22 +16,6 @@ namespace aether
         float luminance(Vec3 rgb)
         {
             return 0.2126f * rgb.x + 0.7152f * rgb.y + 0.0722f * rgb.z;
-        }
-
-        float largestAbsComponent(Vec3 v)
-        {
-            return std::max({ std::abs(v.x), std::abs(v.y), std::abs(v.z) });
-        }
-
-        // How many screen pixels one world unit covers for this region.
-        // Model: the region appears as a disc whose area is screenCoverage of the screen
-        // and whose diameter corresponds to the bounding sphere's diameter.
-        float pixelsPerWorldUnit(const SceneRegion& region, float screenPixelCount)
-        {
-            const float areaPixels = region.screenCoverage * screenPixelCount;
-            const float diameterPixels = 2.0f * std::sqrt(areaPixels / std::numbers::pi_v<float>);
-            const float diameterWorld = 2.0f * std::max(region.geometry.boundingRadius, 1e-6f);
-            return diameterPixels / diameterWorld;
         }
     }
 
@@ -57,7 +42,7 @@ namespace aether
         change.displacementPixels = length(current.geometry.position - reference.geometry.position) * pixelsPerUnit;
 
         // Material, since the reference.
-        const float albedoDelta = largestAbsComponent(current.material.albedo - reference.material.albedo);
+        const float albedoDelta = maxAbsComponent(current.material.albedo - reference.material.albedo);
         const float roughnessDelta = std::abs(current.material.roughness - reference.material.roughness);
         change.materialDelta = std::max(albedoDelta, roughnessDelta);
 

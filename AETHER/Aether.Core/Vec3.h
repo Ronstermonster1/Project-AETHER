@@ -38,6 +38,13 @@ namespace aether
         return a.x * b.x + a.y * b.y + a.z * b.z;
     }
 
+    // Multiplies matching components: (a.x * b.x, a.y * b.y, a.z * b.z).
+    // Used for colours, e.g. albedo times incoming light.
+    [[nodiscard]] constexpr Vec3 multiplyComponents(Vec3 a, Vec3 b)
+    {
+        return { a.x * b.x, a.y * b.y, a.z * b.z };
+    }
+
     // Bit-for-bit comparison. Correct for ground-truth questions such as
     // "did the scenario touch this value at all?" or "are two runs identical?".
     // NOT for change detection: tiny float differences would count as changes.
@@ -49,4 +56,7 @@ namespace aether
 
     // Declared here, defined in Vec3.cpp (compiled into Aether.Core.lib).
     [[nodiscard]] float length(Vec3 v);
+
+    // The largest of |x|, |y| and |z|. For a colour difference: the worst channel.
+    [[nodiscard]] float maxAbsComponent(Vec3 v);
 }

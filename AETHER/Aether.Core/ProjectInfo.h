@@ -19,5 +19,6 @@ namespace aether
     // 0.3.0: added the ChangeDetector.
     // 0.4.0: added the TemporalStore and temporal confidence.
     // 0.5.0: added the ImportanceEstimator and CostEstimator.
-    inline constexpr std::string_view kSimulatorVersion = "0.5.0";
+    // 0.6.0: added the VisualErrorEstimator and the GroundTruthEvaluator.
+    inline constexpr std::string_view kSimulatorVersion = "0.6.0";
 }
